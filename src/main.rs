@@ -4,8 +4,8 @@ use tiler::{App, Context, Frame, TileSet};
 
 #[derive(Debug, TileSet)]
 pub enum Tiles {
-    #[tileset(char = ' ', default)]
-    Empty,
+    #[tileset(char = '.', fg_color = "green", default)]
+    Grass,
     #[tileset(char = '☺')]
     Character,
     #[tileset(char = '║', fg_color = "gray")]
@@ -20,7 +20,7 @@ pub enum Tiles {
     WallSW,
     #[tileset(char = '╝', fg_color = "gray")]
     WallSE,
-    #[tileset(char = '.', fg_color = "green")]
+    #[tileset(char = '.', fg_color = "white")]
     Floor,
 }
 
