@@ -2,8 +2,8 @@ use nom::IResult;
 use rusttype::{point, Font as RTFont, FontCollection, Point, Scale};
 use std::u8;
 
-const FONT_WIDTH: usize = 10;
-const FONT_HEIGHT: usize = 20;
+const FONT_HEIGHT: usize = 40;
+const FONT_WIDTH: usize = FONT_HEIGHT / 2;
 
 pub struct Font {
     inner: RTFont<'static>,
@@ -19,7 +19,7 @@ impl Font {
         let font = collection
             .into_font()
             .expect("expected single font, found multiple");
-        let scale = Scale::uniform(20.0);
+        let scale = Scale::uniform(FONT_HEIGHT as f32);
         let v_metrics = font.v_metrics(scale);
         let offset = point(0.0, v_metrics.ascent);
         Font {
@@ -36,8 +36,8 @@ impl Font {
             .scaled(self.scale)
             .positioned(self.offset);
 
-        println!("{:#?}", ch);
-        println!("{:#?}", glyph);
+        //println!("{:#?}", ch);
+        //println!("{:#?}", glyph);
         let mut output = Glyph::blank(bg);
         if let Some(bb) = glyph.pixel_bounding_box() {
             glyph.draw(|x, y, v| {
@@ -46,13 +46,10 @@ impl Font {
                 if x >= 0 && x < (FONT_WIDTH as i32) && y >= 0 && y < (FONT_HEIGHT as i32) {
                     let x = x as usize;
                     let y = y as usize;
-                    // TODO this is wrong when we have different backgrounds
-                    fn scale_u8(val: f32) -> u8 {
-                        (val * (u8::MAX as f32)) as u8
-                    }
-                    output.set_pixel(x, y, Color::mono(scale_u8(v)));
+                    output.set_pixel(x, y, Color::interp(fg, bg, v));
+                } else {
+                    //println!("clip: ({}, {}) -> {}", x, y, v);
                 }
-                //println!("{}, {} -> {}", x, y, v)
             });
         }
         assert!(output.is_valid());
@@ -127,14 +124,187 @@ impl Color {
 
     /// Parse a color like you would in html
     pub fn parse(input: &str) -> Result<Self, String> {
-        unimplemented!()
+        let raw_color = RawColor::parse(input).ok_or(String::from("could not parse color"))?;
+        Ok(raw_color.into())
+    }
+
+    pub fn interp(bg: Color, fg: Color, t: f32) -> Color {
+        let fgr = fg.r as f32 / 255.0;
+        let fgg = fg.g as f32 / 255.0;
+        let fgb = fg.b as f32 / 255.0;
+        let fga = fg.a as f32 / 255.0;
+        let bgr = bg.r as f32 / 255.0;
+        let bgg = bg.g as f32 / 255.0;
+        let bgb = bg.b as f32 / 255.0;
+        let bga = bg.a as f32 / 255.0;
+        let r = ((1.0 - t) * fgr * fgr + t * bgr * bgr).sqrt();
+        let g = ((1.0 - t) * fgg * fgg + t * bgg * bgg).sqrt();
+        let b = ((1.0 - t) * fgb * fgb + t * bgb * bgb).sqrt();
+        let a = (1.0 - t) * fga + t * bga;
+        Color {
+            r: (r * 255.0) as u8,
+            g: (g * 255.0) as u8,
+            b: (b * 255.0) as u8,
+            a: (a * 255.0) as u8,
+        }
+    }
+}
+
+impl From<RawColor> for Color {
+    fn from(raw_color: RawColor) -> Self {
+        use RawColor::*;
+        match raw_color {
+            Rgb(r, g, b) => Color::rgb(r, g, b),
+            Hsl(h, s, l) => unimplemented!(),
+            IndianRed => Color::rgb(205, 92, 92),
+            LightCoral => Color::rgb(240, 128, 128),
+            Salmon => Color::rgb(250, 128, 114),
+            DarkSalmon => Color::rgb(233, 150, 122),
+            LightSalmon => Color::rgb(255, 160, 122),
+            Crimson => Color::rgb(220, 20, 60),
+            Red => Color::rgb(255, 0, 0),
+            FireBrick => Color::rgb(178, 34, 34),
+            DarkRed => Color::rgb(139, 0, 0),
+            Pink => Color::rgb(255, 192, 203),
+            LightPink => Color::rgb(255, 182, 193),
+            HotPink => Color::rgb(255, 105, 180),
+            DeepPink => Color::rgb(255, 20, 147),
+            MediumVioletRed => Color::rgb(199, 21, 133),
+            PaleVioletRed => Color::rgb(219, 112, 147),
+            Coral => Color::rgb(255, 127, 80),
+            Tomato => Color::rgb(255, 99, 71),
+            OrangeRed => Color::rgb(255, 69, 0),
+            DarkOrange => Color::rgb(255, 140, 0),
+            Orange => Color::rgb(255, 165, 0),
+            Gold => Color::rgb(255, 215, 0),
+            Yellow => Color::rgb(255, 255, 0),
+            LightYellow => Color::rgb(255, 255, 224),
+            LemonChiffon => Color::rgb(255, 250, 205),
+            LightGoldenrodYellow => Color::rgb(250, 250, 210),
+            PapayaWhip => Color::rgb(255, 239, 213),
+            Moccasin => Color::rgb(255, 228, 181),
+            PeachPuff => Color::rgb(255, 218, 185),
+            PaleGoldenrod => Color::rgb(238, 232, 170),
+            Khaki => Color::rgb(240, 230, 140),
+            DarkKhaki => Color::rgb(189, 183, 107),
+            Lavender => Color::rgb(230, 230, 250),
+            Thistle => Color::rgb(216, 191, 216),
+            Plum => Color::rgb(221, 160, 221),
+            Violet => Color::rgb(238, 130, 238),
+            Orchid => Color::rgb(218, 112, 214),
+            Fuchsia => Color::rgb(255, 0, 255),
+            Magenta => Color::rgb(255, 0, 255),
+            MediumOrchid => Color::rgb(186, 85, 211),
+            MediumPurple => Color::rgb(147, 112, 219),
+            RebeccaPurple => Color::rgb(102, 51, 153),
+            BlueViolet => Color::rgb(138, 43, 226),
+            DarkViolet => Color::rgb(148, 0, 211),
+            DarkOrchid => Color::rgb(153, 50, 204),
+            DarkMagenta => Color::rgb(139, 0, 139),
+            Purple => Color::rgb(128, 0, 128),
+            Indigo => Color::rgb(75, 0, 130),
+            SlateBlue => Color::rgb(106, 90, 205),
+            DarkSlateBlue => Color::rgb(72, 61, 139),
+            MediumSlateBlue => Color::rgb(123, 104, 238),
+            GreenYellow => Color::rgb(173, 255, 47),
+            Chartreuse => Color::rgb(127, 255, 0),
+            LawnGreen => Color::rgb(124, 252, 0),
+            Lime => Color::rgb(0, 255, 0),
+            LimeGreen => Color::rgb(50, 205, 50),
+            PaleGreen => Color::rgb(152, 251, 152),
+            LightGreen => Color::rgb(144, 238, 144),
+            MediumSpringGreen => Color::rgb(0, 250, 154),
+            SpringGreen => Color::rgb(0, 255, 127),
+            MediumSeaGreen => Color::rgb(60, 179, 113),
+            SeaGreen => Color::rgb(46, 139, 87),
+            ForestGreen => Color::rgb(34, 139, 34),
+            Green => Color::rgb(0, 128, 0),
+            DarkGreen => Color::rgb(0, 100, 0),
+            YellowGreen => Color::rgb(154, 205, 50),
+            OliveDrab => Color::rgb(107, 142, 35),
+            Olive => Color::rgb(128, 128, 0),
+            DarkOliveGreen => Color::rgb(85, 107, 47),
+            MediumAquamarine => Color::rgb(102, 205, 170),
+            DarkSeaGreen => Color::rgb(143, 188, 139),
+            LightSeaGreen => Color::rgb(32, 178, 170),
+            DarkCyan => Color::rgb(0, 139, 139),
+            Teal => Color::rgb(0, 128, 128),
+            Aqua => Color::rgb(0, 255, 255),
+            Cyan => Color::rgb(0, 255, 255),
+            LightCyan => Color::rgb(224, 255, 255),
+            PaleTurquoise => Color::rgb(175, 238, 238),
+            Aquamarine => Color::rgb(127, 255, 212),
+            Turquoise => Color::rgb(64, 224, 208),
+            MediumTurquoise => Color::rgb(72, 209, 204),
+            DarkTurquoise => Color::rgb(0, 206, 209),
+            CadetBlue => Color::rgb(95, 158, 160),
+            SteelBlue => Color::rgb(70, 130, 180),
+            LightSteelBlue => Color::rgb(176, 196, 222),
+            PowderBlue => Color::rgb(176, 224, 230),
+            LightBlue => Color::rgb(173, 216, 230),
+            SkyBlue => Color::rgb(135, 206, 235),
+            LightSkyBlue => Color::rgb(135, 206, 250),
+            DeepSkyBlue => Color::rgb(0, 191, 255),
+            DodgerBlue => Color::rgb(30, 144, 255),
+            CornflowerBlue => Color::rgb(100, 149, 237),
+            RoyalBlue => Color::rgb(65, 105, 225),
+            Blue => Color::rgb(0, 0, 255),
+            MediumBlue => Color::rgb(0, 0, 205),
+            DarkBlue => Color::rgb(0, 0, 139),
+            Navy => Color::rgb(0, 0, 128),
+            MidnightBlue => Color::rgb(25, 25, 112),
+            Cornsilk => Color::rgb(255, 248, 220),
+            BlanchedAlmond => Color::rgb(255, 235, 205),
+            Bisque => Color::rgb(255, 228, 196),
+            NavajoWhite => Color::rgb(255, 222, 173),
+            Wheat => Color::rgb(245, 222, 179),
+            BurlyWood => Color::rgb(222, 184, 135),
+            Tan => Color::rgb(210, 180, 140),
+            RosyBrown => Color::rgb(188, 143, 143),
+            SandyBrown => Color::rgb(244, 164, 96),
+            Goldenrod => Color::rgb(218, 165, 32),
+            DarkGoldenrod => Color::rgb(184, 134, 11),
+            Peru => Color::rgb(205, 133, 63),
+            Chocolate => Color::rgb(210, 105, 30),
+            SaddleBrown => Color::rgb(139, 69, 19),
+            Sienna => Color::rgb(160, 82, 45),
+            Brown => Color::rgb(165, 42, 42),
+            Maroon => Color::rgb(128, 0, 0),
+            White => Color::rgb(255, 255, 255),
+            Snow => Color::rgb(255, 250, 250),
+            HoneyDew => Color::rgb(240, 255, 240),
+            MintCream => Color::rgb(245, 255, 250),
+            Azure => Color::rgb(240, 255, 255),
+            AliceBlue => Color::rgb(240, 248, 255),
+            GhostWhite => Color::rgb(248, 248, 255),
+            WhiteSmoke => Color::rgb(245, 245, 245),
+            SeaShell => Color::rgb(255, 245, 238),
+            Beige => Color::rgb(245, 245, 220),
+            OldLace => Color::rgb(253, 245, 230),
+            FloralWhite => Color::rgb(255, 250, 240),
+            Ivory => Color::rgb(255, 255, 240),
+            AntiqueWhite => Color::rgb(250, 235, 215),
+            Linen => Color::rgb(250, 240, 230),
+            LavenderBlush => Color::rgb(255, 240, 245),
+            MistyRose => Color::rgb(255, 228, 225),
+            Gainsboro => Color::rgb(220, 220, 220),
+            LightGray => Color::rgb(211, 211, 211),
+            Silver => Color::rgb(192, 192, 192),
+            DarkGray => Color::rgb(169, 169, 169),
+            Gray => Color::rgb(128, 128, 128),
+            DimGray => Color::rgb(105, 105, 105),
+            LightSlateGray => Color::rgb(119, 136, 153),
+            SlateGray => Color::rgb(112, 128, 144),
+            DarkSlateGray => Color::rgb(47, 79, 79),
+            Black => Color::rgb(0, 0, 0),
+        }
     }
 }
 
 #[derive(Debug, PartialEq)]
 enum RawColor {
     Rgb(u8, u8, u8),
-    Hsl(u16, f32, f32),
+    Hsl(u8, f32, f32),
     // Red HTML Color Names
     /// rgb(205, 92, 92)
     IndianRed,
@@ -601,7 +771,29 @@ impl RawColor {
     }
 
     fn parse_hsl(input: &str) -> IResult<&str, Self> {
-        unimplemented!()
+        use nom::bytes::complete::tag;
+        let input = input.trim();
+        let (input, _) = tag("hsl")(input)?;
+        let input = input.trim_start();
+        let (input, _) = tag("(")(input)?;
+        let input = input.trim_start();
+        let (input, hue) = parse_u8(input)?;
+        let input = input.trim_start();
+        let (input, _) = tag(",")(input)?;
+        let input = input.trim_start();
+        let (input, saturation) = parse_u8(input)?;
+        let input = input.trim_start();
+        let (input, _) = tag(",")(input)?;
+        let input = input.trim_start();
+        let (input, lightness) = parse_u8(input)?;
+        let input = input.trim_start();
+        let (input, _) = tag(")")(input)?;
+        let input = input.trim_start();
+        if saturation > 100 || lightness > 100 {
+            use nom::error::{make_error, ErrorKind};
+            return Err(nom::Err::Failure(make_error(input, ErrorKind::MapRes)));
+        }
+        Ok((input, RawColor::Hsl(hue, saturation.into(), lightness.into())))
     }
 
     fn parse_hex(input: &str) -> IResult<&str, Self> {
@@ -610,39 +802,52 @@ impl RawColor {
             combinator::map_res,
             sequence::tuple,
         };
-        fn from_hex(input: &str) -> Result<u8, std::num::ParseIntError> {
-            u8::from_str_radix(input, 8)
-        }
-        fn is_hex_digit(c: char) -> bool {
-            c.is_digit(16)
-        }
-        fn hex_primary(input: &str) -> IResult<&str, u8> {
-            map_res(take_while_m_n(2, 2, is_hex_digit), from_hex)(input)
-        }
         let (input, _) = tag("#")(input)?;
         let (input, (red, green, blue)) = tuple((hex_primary, hex_primary, hex_primary))(input)?;
         Ok((input, RawColor::Rgb(red, green, blue)))
     }
 
     fn parse_rgb(input: &str) -> IResult<&str, Self> {
-        unimplemented!()
+        use nom::bytes::complete::tag;
+        let input = input.trim();
+        let (input, _) = tag("rgb")(input)?;
+        let input = input.trim_start();
+        let (input, _) = tag("(")(input)?;
+        let input = input.trim_start();
+        let (input, red) = parse_u8(input)?;
+        let input = input.trim_start();
+        let (input, _) = tag(",")(input)?;
+        let input = input.trim_start();
+        let (input, green) = parse_u8(input)?;
+        let input = input.trim_start();
+        let (input, _) = tag(",")(input)?;
+        let input = input.trim_start();
+        let (input, blue) = parse_u8(input)?;
+        let input = input.trim_start();
+        let (input, _) = tag(")")(input)?;
+        let input = input.trim_start();
+        Ok((input, RawColor::Rgb(red, green, blue)))
     }
 }
 
-fn consume_space(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    use nom::{bytes::complete::take_while, character::is_space};
-    take_while(is_space)(input)
+fn hex_primary(input: &str) -> IResult<&str, u8> {
+    use nom::{bytes::complete::take_while_m_n, combinator::map_res};
+    fn is_hex_digit(c: char) -> bool {
+        c.is_digit(16)
+    }
+    fn from_hex(input: &str) -> Result<u8, std::num::ParseIntError> {
+        u8::from_str_radix(input, 16)
+    }
+    map_res(take_while_m_n(2, 2, is_hex_digit), from_hex)(input)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::RawColor;
-
-    #[test]
-    fn parse_hex() {
-        assert_eq!(
-            RawColor::parse_hex("#ffffff"),
-            Ok(("", RawColor::Rgb(255, 255, 255)))
-        );
+fn parse_u8(input: &str) -> IResult<&str, u8> {
+    use nom::{bytes::complete::take_while_m_n, combinator::map_res};
+    fn is_digit(c: char) -> bool {
+        c.is_digit(10)
     }
+    fn from_dec(input: &str) -> Result<u8, std::num::ParseIntError> {
+        u8::from_str_radix(input, 10)
+    }
+    map_res(take_while_m_n(1, 3, is_digit), from_dec)(input)
 }

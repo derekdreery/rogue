@@ -45,7 +45,7 @@ impl<'a> RgbaImage<'a> {
     fn load_into_ggez(&self, context: &mut ggez::Context) -> GameResult<graphics::Image> {
         //println!("{:#?}", self);
         let mut image = graphics::Image::from_rgba8(context, self.width, self.height, self.rgba)?;
-        image.set_filter(FilterMode::Nearest);
+        //image.set_filter(FilterMode::Nearest);
         Ok(image)
     }
 }
@@ -81,8 +81,8 @@ where
         let stride_x = dims.w / A::WIDTH as f32;
         let stride_y = dims.h / A::HEIGHT as f32;
         let scale = Vector2 {
-            x: stride_x / 10.0,
-            y: stride_y / 20.0,
+            x: stride_x / 20.0,
+            y: stride_y / 40.0,
         };
         graphics::clear(ctx, graphics::BLACK);
         for x in 0..A::WIDTH {

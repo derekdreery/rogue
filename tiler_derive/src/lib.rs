@@ -17,7 +17,6 @@ mod glyph;
 
 mod kw {
     syn::custom_keyword!(char);
-    syn::custom_keyword!(inverted);
     syn::custom_keyword!(fg_color);
     syn::custom_keyword!(bg_color);
 }
@@ -30,7 +29,6 @@ enum TileAttr {
         lit_char: LitChar,
     },
     Default(Token![default]),
-    Inverted(kw::inverted),
     FgColor {
         keyword: kw::fg_color,
         equals: Token![=],
@@ -57,8 +55,6 @@ impl Parse for TileAttr {
                 equals,
                 lit_char,
             })
-        } else if lookahead.peek(kw::inverted) {
-            input.parse().map(TileAttr::Inverted)
         } else if lookahead.peek(kw::fg_color) {
             let keyword = input.parse()?;
             let equals = input.parse()?;
@@ -103,7 +99,8 @@ impl Parse for TileAttrs {
 struct TileInfo {
     ident: Ident,
     character: char,
-    inverted: bool,
+    fg_color: Color,
+    bg_color: Color,
 }
 
 #[derive(Debug)]
@@ -145,19 +142,15 @@ fn real_derive_tileset(input: DeriveInput) -> Result<TokStr2> {
                 TileInfo {
                     ident,
                     character,
-                    inverted,
+                    fg_color,
+                    bg_color,
                 },
             )| {
-                let (fg, bg) = if *inverted {
-                    (Color::BLACK, Color::WHITE)
-                } else {
-                    (Color::WHITE, Color::BLACK)
-                };
                 let Glyph {
                     width,
                     height,
                     data,
-                } = font.glyph(*character, fg, bg);
+                } = font.glyph(*character, *fg_color, *bg_color);
                 let width = width as u16;
                 let height = height as u16;
                 let ch = Literal::character(*character);
@@ -213,7 +206,6 @@ fn get_all_tile_info(data: &DataEnum, input: &DeriveInput) -> Result<TileSetInfo
     let mut tile_info = Vec::new();
     for variant in data.variants.iter() {
         let mut character: Option<char> = None;
-        let mut inverted = false;
         let mut fg_color = Color::WHITE;
         let mut bg_color = Color::BLACK;
         for attr in get_tile_attrs(&variant)? {
@@ -240,7 +232,6 @@ fn get_all_tile_info(data: &DataEnum, input: &DeriveInput) -> Result<TileSetInfo
                         ))
                     }
                 },
-                TileAttr::Inverted(_) => inverted = true,
                 TileAttr::FgColor {
                     keyword,
                     equals,
@@ -266,7 +257,8 @@ fn get_all_tile_info(data: &DataEnum, input: &DeriveInput) -> Result<TileSetInfo
         tile_info.push(TileInfo {
             ident: variant.ident.clone(),
             character,
-            inverted,
+            fg_color,
+            bg_color,
         });
     }
     let default = match default {
