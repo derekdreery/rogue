@@ -1,0 +1,10 @@
+[package]
+name = "tiler"
+version = "0.1.0"
+authors = ["Richard Dodd <richard.o.dodd@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+tiler_derive = { version = "0.1", path = "../tiler_derive" }
+ggez = "0.5.1"
+mint = "0.5.2"
