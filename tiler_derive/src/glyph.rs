@@ -793,7 +793,10 @@ impl RawColor {
             use nom::error::{make_error, ErrorKind};
             return Err(nom::Err::Failure(make_error(input, ErrorKind::MapRes)));
         }
-        Ok((input, RawColor::Hsl(hue, saturation.into(), lightness.into())))
+        Ok((
+            input,
+            RawColor::Hsl(hue, saturation.into(), lightness.into()),
+        ))
     }
 
     fn parse_hex(input: &str) -> IResult<&str, Self> {

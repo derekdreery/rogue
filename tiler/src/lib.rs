@@ -1,4 +1,5 @@
 pub use crate::frame::*;
+pub use ggez::event::{KeyCode, KeyMods, quit};
 use ggez::{
     graphics::{
         self,
@@ -58,7 +59,9 @@ pub trait App {
 
     type TileSet: TileSet + Default;
 
-    fn draw(&self, frame: &mut Frame<Self::TileSet>, ctx: Context);
+    fn draw(&self, frame: &mut Grid<Self::TileSet>, ctx: Context);
+    fn update(&mut self, ctx: Context);
+    fn key_down_event(&mut self, ctx: Context, keycode: KeyCode, keymods: KeyMods, repeat: bool) {}
 }
 
 struct AppContainer<A> {
@@ -71,11 +74,12 @@ where
     A: App,
 {
     fn update(&mut self, _: &mut ggez::Context) -> ggez::GameResult {
+        self.app.update(Context);
         Ok(())
     }
 
     fn draw(&mut self, ctx: &mut ggez::Context) -> ggez::GameResult {
-        let mut frame = Frame::new(A::WIDTH, A::HEIGHT);
+        let mut frame = Grid::new(A::WIDTH, A::HEIGHT);
         self.app.draw(&mut frame, Context);
         let dims = graphics::screen_coordinates(ctx);
         let stride_x = dims.w / A::WIDTH as f32;
@@ -87,7 +91,7 @@ where
         graphics::clear(ctx, graphics::BLACK);
         for x in 0..A::WIDTH {
             for y in 0..A::HEIGHT {
-                let ch = frame.get(y, x);
+                let ch = &frame[(x, y)];
                 let dest = Point2 {
                     x: x as f32 * stride_x,
                     y: y as f32 * stride_y,
@@ -102,6 +106,19 @@ where
         }
         graphics::present(ctx)?;
         Ok(())
+    }
+
+    fn key_down_event(
+        &mut self,
+        ctx: &mut ggez::Context,
+        keycode: KeyCode,
+        keymods: KeyMods,
+        repeat: bool,
+    ) {
+        if keycode == KeyCode::Escape {
+            quit(ctx);
+        }
+        self.app.key_down_event(Context, keycode, keymods, repeat)
     }
 }
 

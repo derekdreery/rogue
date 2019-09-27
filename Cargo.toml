@@ -4,12 +4,10 @@ version = "0.1.0"
 authors = ["Richard Dodd <richard.o.dodd@gmail.com>"]
 edition = "2018"
 
-[profile.dev]
-incremental = false
-
 [dependencies]
 tiler = { version = "0.1", path = "./tiler" }
 mint = "0.5.2"
+rand = "0.7.2"
 
 [workspace]
 members = [
