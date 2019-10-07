@@ -1,7 +1,7 @@
 use mint::Point2;
 use rand::prelude::*;
 use std::{thread, time::Duration};
-use tiler::{App, Frame, TileSet};
+use tiler::{App, Context, Frame, KeyCode, TileSet};
 
 #[derive(Debug, Copy, Clone, TileSet)]
 pub enum Tiles {
@@ -47,12 +47,11 @@ impl App for State {
         let room = Room::new(0, 0, 5, 7);
         room.draw(frame);
         let room = Room::new(20, 15, 28, 18);
-        //room.draw(&mut frame.grid);
+        room.draw(frame);
         frame[(self.player.x, self.player.y)] = Tiles::Character.to_char();
     }
 
-    /*
-    fn key_down_event(&mut self, ctx: Context, keycode: KeyCode, keymods: KeyMods, repeat: bool) {
+    fn key_down_event(&mut self, mut ctx: Context, keycode: KeyCode) {
         match keycode {
             KeyCode::Left => {
                 if self.player.x > 0 {
@@ -74,10 +73,12 @@ impl App for State {
                     self.player.y += 1;
                 }
             }
+            KeyCode::Escape => {
+                ctx.exit();
+            }
             _ => (), // ignore
         }
     }
-    */
 }
 
 /// The indexes of the parameters are the walls.

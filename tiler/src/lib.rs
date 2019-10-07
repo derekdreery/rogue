@@ -7,8 +7,9 @@ use std::{
 };
 use wgpu_glyph::{GlyphBrushBuilder, Scale, Section};
 pub use winit;
+pub use winit::event::VirtualKeyCode as KeyCode;
 use winit::{
-    event::{DeviceEvent, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
+    event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     platform::unix::WindowBuilderExtUnix,
     window::WindowBuilder,
@@ -29,8 +30,14 @@ pub trait App {
 
     /// Update state and draw to the supplied frame.
     fn update(&mut self, frame: &mut Frame);
+    fn key_down_event(&mut self, mut ctx: Context<'_>, keycode: KeyCode) {
+        match keycode {
+            KeyCode::Escape => ctx.exit(),
+            _ => (),
+        };
+    }
     //#[allow(unused_variables)]
-    //fn key_down_event(&mut self, ctx: Context<'_>, keycode: KeyCode, keymods: KeyMods, repeat: bool) {}
+    fn key_up_event(&mut self, keycode: KeyCode) {}
 }
 
 struct AppContainer<A>
@@ -41,13 +48,23 @@ where
     frame_buf: Frame,
 }
 
+pub struct Context<'a> {
+    control_flow: &'a mut ControlFlow,
+}
+
+impl<'a> Context<'a> {
+    pub fn exit(&mut self) {
+        *self.control_flow = ControlFlow::Exit;
+    }
+}
+
 pub fn run<A>(mut app: A) -> Result<(), Box<dyn std::error::Error + 'static>>
 where
     A: App + 'static,
 {
     let mut app_ctr = AppContainer {
         app,
-        frame_buf: Default::default(),
+        frame_buf: Frame::new(A::SIZE),
     };
     let instance = wgpu::Instance::new();
     let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -89,6 +106,7 @@ where
         match event {
             Event::EventsCleared => {
                 // update state
+                app_ctr.frame_buf.clear();
                 app_ctr.app.update(&mut app_ctr.frame_buf);
                 window.request_redraw();
             }
@@ -174,13 +192,19 @@ where
             Event::DeviceEvent {
                 event:
                     DeviceEvent::Key(KeyboardInput {
-                        virtual_keycode: Some(VirtualKeyCode::Escape),
+                        virtual_keycode,
+                        state,
                         ..
                     }),
                 ..
             } => {
-                println!("The close button was pressed; stopping");
-                *control_flow = ControlFlow::Exit
+                if let Some(keycode) = virtual_keycode {
+                    let mut ctx = Context { control_flow };
+                    match state {
+                        ElementState::Pressed => app_ctr.app.key_down_event(ctx, keycode),
+                        _ => (),
+                    }
+                }
             }
             Event::WindowEvent {
                 event: WindowEvent::Resized(new_size),
@@ -241,19 +265,13 @@ impl Default for Char {
 }
 
 impl Frame {
-    pub fn new(width: usize, height: usize) -> Self {
-        let area = width * height;
+    pub fn new(size: Point2<usize>) -> Self {
+        let area = size.x * size.y;
         let mut buf = Vec::with_capacity(area);
         for _ in 0..area {
             buf.push(Default::default());
         }
-        Self {
-            buf,
-            size: Point2 {
-                x: width,
-                y: height,
-            },
-        }
+        Self { buf, size }
     }
 
     pub fn clear(&mut self) {
@@ -308,13 +326,6 @@ impl Frame {
             }
             println!()
         }
-    }
-}
-
-impl Default for Frame {
-    /// Assumes a 80x25 frame size.
-    fn default() -> Self {
-        Frame::new(80, 25)
     }
 }
 
