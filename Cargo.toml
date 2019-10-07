@@ -14,5 +14,4 @@ members = [
   ".",
   "tiler",
   "tiler_derive",
-  "winit_gpu_test",
 ]
