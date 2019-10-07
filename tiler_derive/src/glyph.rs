@@ -5,96 +5,6 @@ use std::u8;
 const FONT_HEIGHT: usize = 40;
 const FONT_WIDTH: usize = FONT_HEIGHT / 2;
 
-pub struct Font {
-    inner: RTFont<'static>,
-    scale: Scale,
-    offset: Point<f32>,
-}
-
-impl Font {
-    pub fn new() -> Self {
-        let font_data = include_bytes!("../font.ttf");
-        let collection =
-            FontCollection::from_bytes(&font_data[..]).expect("failed to parse otf font");
-        let font = collection
-            .into_font()
-            .expect("expected single font, found multiple");
-        let scale = Scale::uniform(FONT_HEIGHT as f32);
-        let v_metrics = font.v_metrics(scale);
-        let offset = point(0.0, v_metrics.ascent);
-        Font {
-            inner: font,
-            scale,
-            offset,
-        }
-    }
-
-    pub fn glyph(&self, ch: char, fg: Color, bg: Color) -> Glyph {
-        let glyph = self
-            .inner
-            .glyph(ch)
-            .scaled(self.scale)
-            .positioned(self.offset);
-
-        //println!("{:#?}", ch);
-        //println!("{:#?}", glyph);
-        let mut output = Glyph::blank(bg);
-        if let Some(bb) = glyph.pixel_bounding_box() {
-            glyph.draw(|x, y, v| {
-                let x = x as i32 + bb.min.x;
-                let y = y as i32 + bb.min.y;
-                if x >= 0 && x < (FONT_WIDTH as i32) && y >= 0 && y < (FONT_HEIGHT as i32) {
-                    let x = x as usize;
-                    let y = y as usize;
-                    output.set_pixel(x, y, Color::interp(fg, bg, v));
-                } else {
-                    //println!("clip: ({}, {}) -> {}", x, y, v);
-                }
-            });
-        }
-        assert!(output.is_valid());
-        output
-    }
-}
-
-pub struct Glyph {
-    pub width: usize,
-    pub height: usize,
-    pub data: Vec<u8>,
-}
-
-impl Glyph {
-    fn is_valid(&self) -> bool {
-        (self.width * self.height * 4) as usize == self.data.len()
-    }
-    fn blank(color: Color) -> Self {
-        let mut data = Vec::with_capacity(FONT_WIDTH * FONT_HEIGHT * 4);
-        for _ in 0..(FONT_WIDTH * FONT_HEIGHT) {
-            data.push(color.r);
-            data.push(color.g);
-            data.push(color.b);
-            data.push(color.a);
-        }
-        Self {
-            width: FONT_WIDTH,
-            height: FONT_HEIGHT,
-            data,
-        }
-    }
-
-    pub fn pixel_start(&self, x: usize, y: usize) -> usize {
-        y * (self.width as usize) + x
-    }
-
-    pub fn set_pixel(&mut self, x: usize, y: usize, color: Color) {
-        let idx = self.pixel_start(x, y);
-        self.data[idx * 4] = color.r;
-        self.data[idx * 4 + 1] = color.g;
-        self.data[idx * 4 + 2] = color.b;
-        self.data[idx * 4 + 3] = color.a;
-    }
-}
-
 #[derive(Debug, Copy, Clone)]
 pub struct Color {
     pub r: u8,
@@ -147,6 +57,24 @@ impl Color {
             b: (b * 255.0) as u8,
             a: (a * 255.0) as u8,
         }
+    }
+
+    pub fn as_array(self) -> impl quote::ToTokens {
+        let [r, g, b, a] = Into::<[f32; 4]>::into(self);
+        quote::quote! {
+            [ #r, #g, #b, #a ]
+        }
+    }
+}
+
+impl Into<[f32; 4]> for Color {
+    fn into(self) -> [f32; 4] {
+        [
+            self.r as f32 / 255.0,
+            self.g as f32 / 255.0,
+            self.b as f32 / 255.0,
+            self.a as f32 / 255.0,
+        ]
     }
 }
 
@@ -800,11 +728,7 @@ impl RawColor {
     }
 
     fn parse_hex(input: &str) -> IResult<&str, Self> {
-        use nom::{
-            bytes::complete::{tag, take_while_m_n},
-            combinator::map_res,
-            sequence::tuple,
-        };
+        use nom::{bytes::complete::tag, sequence::tuple};
         let (input, _) = tag("#")(input)?;
         let (input, (red, green, blue)) = tuple((hex_primary, hex_primary, hex_primary))(input)?;
         Ok((input, RawColor::Rgb(red, green, blue)))

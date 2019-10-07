@@ -1,141 +1,345 @@
-pub use crate::frame::*;
-pub use ggez::event::{KeyCode, KeyMods, quit};
-use ggez::{
-    graphics::{
-        self,
-        mint::{Point2, Vector2},
-        BlendMode, DrawParam, FilterMode,
-    },
-    GameResult,
+use mint::Point2;
+use raw_window_handle::HasRawWindowHandle;
+use std::ops::{Index, IndexMut};
+use std::{
+    f32,
+    time::{Duration, Instant},
 };
+use wgpu_glyph::{GlyphBrushBuilder, Scale, Section};
+pub use winit;
+use winit::{
+    event::{DeviceEvent, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    platform::unix::WindowBuilderExtUnix,
+    window::WindowBuilder,
+};
+
 pub use tiler_derive::TileSet;
 
-mod frame;
-
-pub struct Context;
-
 pub trait TileSet {
-    /// Get the bitmaps representing this tileset.
-    ///
-    /// Currently, the bitmaps must be exactly 12*6 pixels.
-    fn get_bmps() -> &'static [RgbaImage<'static>];
-
-    /// Returns the character that represents the tile. Used for debugging.
-    fn as_char(&self) -> char;
-
-    /// Get the index in the images of this tile in the tileset.
-    fn idx(&self) -> usize;
+    fn to_char(&self) -> Char;
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct RgbaImage<'a> {
-    pub width: u16,
-    pub height: u16,
-    pub rgba: &'a [u8],
-}
-
-impl<'a> RgbaImage<'a> {
-    pub const fn new(width: u16, height: u16, rgba: &'a [u8]) -> Self {
-        RgbaImage {
-            width,
-            height,
-            rgba,
-        }
-    }
-
-    fn load_into_ggez(&self, context: &mut ggez::Context) -> GameResult<graphics::Image> {
-        //println!("{:#?}", self);
-        let mut image = graphics::Image::from_rgba8(context, self.width, self.height, self.rgba)?;
-        //image.set_filter(FilterMode::Nearest);
-        Ok(image)
-    }
-}
+const FULL_BLOCK: char = '█';
+const FONT: &'static [u8] = include_bytes!("../source_code_pro.ttf");
 
 pub trait App {
     const NAME: &'static str;
-    const AUTHOR: &'static str = "";
-    const WIDTH: usize = 80;
-    const HEIGHT: usize = 25;
+    const SIZE: Point2<usize>;
 
-    type TileSet: TileSet + Default;
-
-    fn draw(&self, frame: &mut Grid<Self::TileSet>, ctx: Context);
-    fn update(&mut self, ctx: Context);
-    fn key_down_event(&mut self, ctx: Context, keycode: KeyCode, keymods: KeyMods, repeat: bool) {}
+    /// Update state and draw to the supplied frame.
+    fn update(&mut self, frame: &mut Frame);
+    //#[allow(unused_variables)]
+    //fn key_down_event(&mut self, ctx: Context<'_>, keycode: KeyCode, keymods: KeyMods, repeat: bool) {}
 }
 
-struct AppContainer<A> {
-    app: A,
-    images: Vec<graphics::Image>,
-}
-
-impl<A> ggez::event::EventHandler for AppContainer<A>
+struct AppContainer<A>
 where
     A: App,
 {
-    fn update(&mut self, _: &mut ggez::Context) -> ggez::GameResult {
-        self.app.update(Context);
-        Ok(())
+    app: A,
+    frame_buf: Frame,
+}
+
+pub fn run<A>(mut app: A) -> Result<(), Box<dyn std::error::Error + 'static>>
+where
+    A: App + 'static,
+{
+    let mut app_ctr = AppContainer {
+        app,
+        frame_buf: Default::default(),
+    };
+    let instance = wgpu::Instance::new();
+    let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+    });
+    let mut device = adapter.request_device(&wgpu::DeviceDescriptor {
+        extensions: wgpu::Extensions {
+            anisotropic_filtering: false,
+        },
+        limits: wgpu::Limits { max_bind_groups: 1 },
+    });
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new()
+        //.with_resizable(false)
+        .with_class("floating".into(), "floating".into())
+        .build(&event_loop)?;
+    let surface = instance.create_surface(window.raw_window_handle());
+
+    let render_format = wgpu::TextureFormat::Bgra8UnormSrgb;
+    let mut size = window.inner_size().to_physical(window.hidpi_factor());
+
+    let mut swap_chain = device.create_swap_chain(
+        &surface,
+        &wgpu::SwapChainDescriptor {
+            usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+            format: render_format,
+            width: size.width.round() as u32,
+            height: size.height.round() as u32,
+            present_mode: wgpu::PresentMode::Vsync,
+        },
+    );
+
+    let mut glyph_brush =
+        GlyphBrushBuilder::using_font_bytes(FONT).build(&mut device, render_format);
+
+    //let mut last_resize_time: Option<Instant> = None;
+    let mut tmp_str = String::from(" ");
+    event_loop.run(move |event, _, control_flow| {
+        match event {
+            Event::EventsCleared => {
+                // update state
+                app_ctr.app.update(&mut app_ctr.frame_buf);
+                window.request_redraw();
+            }
+            Event::WindowEvent {
+                event: WindowEvent::RedrawRequested,
+                ..
+            } => {
+                log::trace!("draw");
+                // draw
+                let mut encoder =
+                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+                let frame = swap_chain.get_next_texture();
+                {
+                    let _ = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                            attachment: &frame.view,
+                            resolve_target: None,
+                            load_op: wgpu::LoadOp::Clear,
+                            store_op: wgpu::StoreOp::Store,
+                            clear_color: wgpu::Color {
+                                r: 0.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 1.0,
+                            },
+                        }],
+                        depth_stencil_attachment: None,
+                    });
+                }
+                let mut draw_char = |Point2 { x, y }: Point2<usize>, ch: char, color: [f32; 4]| {
+                    tmp_str.clear();
+                    tmp_str.push(ch);
+                    glyph_brush.queue(Section {
+                        text: &tmp_str,
+                        screen_position: (
+                            x as f32 * size.width as f32 / A::SIZE.x as f32,
+                            y as f32 * size.height as f32 / A::SIZE.y as f32,
+                        ),
+                        color,
+                        scale: Scale {
+                            x: size.width as f32 / (A::SIZE.x as f32 / 2.0),
+                            y: size.height as f32 / A::SIZE.y as f32,
+                        },
+                        bounds: (size.width as f32, size.height as f32),
+                        ..Section::default()
+                    });
+                };
+                let frame_size = app_ctr.frame_buf.size;
+                for x in 0..frame_size.x {
+                    for y in 0..frame_size.y {
+                        let idx = Point2 { x, y };
+                        let ch = app_ctr.frame_buf.get(idx);
+                        // background
+                        if ch.bg[3] > f32::EPSILON {
+                            draw_char(idx, FULL_BLOCK, ch.bg);
+                        }
+                        // foreground
+                        if ch.fg[3] > f32::EPSILON {
+                            draw_char(idx, ch.ch, ch.fg);
+                        }
+                    }
+                }
+                if let Err(e) = glyph_brush.draw_queued(
+                    &mut device,
+                    &mut encoder,
+                    &frame.view,
+                    size.width.round() as u32,
+                    size.height.round() as u32,
+                ) {
+                    println!("Error drawing queued glyphs: {}", e);
+                    *control_flow = ControlFlow::Exit;
+                }
+                device.get_queue().submit(&[encoder.finish()]);
+            }
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
+                println!("The close button was pressed; stopping");
+                *control_flow = ControlFlow::Exit
+            }
+            Event::DeviceEvent {
+                event:
+                    DeviceEvent::Key(KeyboardInput {
+                        virtual_keycode: Some(VirtualKeyCode::Escape),
+                        ..
+                    }),
+                ..
+            } => {
+                println!("The close button was pressed; stopping");
+                *control_flow = ControlFlow::Exit
+            }
+            Event::WindowEvent {
+                event: WindowEvent::Resized(new_size),
+                ..
+            } => {
+                // let's debounce this every 100ms.
+                // TODO this isn't debouncing, need to schedule a resize
+                /*
+                if let Some(time) = last_resize_time {
+                    if Instant::now().duration_since(time) < Duration::from_millis(100) {
+                        return;
+                    }
+                }
+                last_resize_time = Some(Instant::now());
+                */
+                size = new_size.to_physical(window.hidpi_factor());
+                swap_chain = device.create_swap_chain(
+                    &surface,
+                    &wgpu::SwapChainDescriptor {
+                        usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+                        format: render_format,
+                        width: size.width.round() as u32,
+                        height: size.height.round() as u32,
+                        present_mode: wgpu::PresentMode::Vsync,
+                    },
+                );
+                window.request_redraw();
+            }
+            _ => *control_flow = ControlFlow::Poll,
+        }
+    });
+}
+
+#[derive(Debug, Clone)]
+pub struct Frame {
+    buf: Vec<Char>,
+    size: Point2<usize>,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Char {
+    /// Get the character for this tile.
+    pub ch: char,
+    /// The foreground color of the character
+    pub fg: [f32; 4],
+    /// The background color of the character
+    pub bg: [f32; 4],
+}
+
+impl Default for Char {
+    fn default() -> Self {
+        Self {
+            ch: ' ',
+            fg: [0.0; 4],
+            bg: [0.0; 4],
+        }
+    }
+}
+
+impl Frame {
+    pub fn new(width: usize, height: usize) -> Self {
+        let area = width * height;
+        let mut buf = Vec::with_capacity(area);
+        for _ in 0..area {
+            buf.push(Default::default());
+        }
+        Self {
+            buf,
+            size: Point2 {
+                x: width,
+                y: height,
+            },
+        }
     }
 
-    fn draw(&mut self, ctx: &mut ggez::Context) -> ggez::GameResult {
-        let mut frame = Grid::new(A::WIDTH, A::HEIGHT);
-        self.app.draw(&mut frame, Context);
-        let dims = graphics::screen_coordinates(ctx);
-        let stride_x = dims.w / A::WIDTH as f32;
-        let stride_y = dims.h / A::HEIGHT as f32;
-        let scale = Vector2 {
-            x: stride_x / 20.0,
-            y: stride_y / 40.0,
-        };
-        graphics::clear(ctx, graphics::BLACK);
-        for x in 0..A::WIDTH {
-            for y in 0..A::HEIGHT {
-                let ch = &frame[(x, y)];
-                let dest = Point2 {
-                    x: x as f32 * stride_x,
-                    y: y as f32 * stride_y,
-                };
-                //println!("{},{}: {:?}, {:?}", x,y, dest, scale);
-                graphics::draw(
-                    ctx,
-                    &self.images[ch.idx()],
-                    DrawParam::default().dest(dest).scale(scale),
-                )?;
+    pub fn clear(&mut self) {
+        for el in self.buf.iter_mut() {
+            *el = Default::default();
+        }
+    }
+
+    pub fn from_fn(width: usize, height: usize, f: impl Fn(usize, usize) -> Char) -> Self {
+        let mut buf = Vec::with_capacity(width * height);
+        for x in 0..width {
+            for y in 0..height {
+                buf.push(f(width, height));
             }
         }
-        graphics::present(ctx)?;
-        Ok(())
+        Self {
+            buf,
+            size: Point2 {
+                x: width,
+                y: height,
+            },
+        }
     }
 
-    fn key_down_event(
-        &mut self,
-        ctx: &mut ggez::Context,
-        keycode: KeyCode,
-        keymods: KeyMods,
-        repeat: bool,
-    ) {
-        if keycode == KeyCode::Escape {
-            quit(ctx);
+    /// Get an item from the grid by location.
+    ///
+    /// You can also use the implementation of `Index` like so: `frame[(1, 2)]`.
+    #[inline]
+    pub fn get(&self, Point2 { x, y }: Point2<usize>) -> &Char {
+        &self.buf[self.idx(x, y)]
+    }
+
+    /// Get a mutable ref to and item from the grid by location.
+    ///
+    /// You can also use the implementation of `IndexMut` like so: `frame[(1, 2)] = 2`.
+    #[inline]
+    pub fn get_mut(&mut self, Point2 { x, y }: Point2<usize>) -> &mut Char {
+        // to keep the borrowchecker happy
+        let idx = self.idx(x, y);
+        &mut self.buf[idx]
+    }
+
+    fn idx(&self, x: usize, y: usize) -> usize {
+        x * self.size.y + y
+    }
+
+    pub fn debug_print(&self) {
+        println!("Frame:");
+        for y in 0..self.size.y {
+            for x in 0..self.size.x {
+                print!("{}", self.get(Point2 { x, y }).ch);
+            }
+            println!()
         }
-        self.app.key_down_event(Context, keycode, keymods, repeat)
     }
 }
 
-pub fn run<A>(mut app: A)
-where
-    A: App,
-{
-    let (mut ctx, mut event_loop) = ggez::ContextBuilder::new(<A as App>::NAME, <A as App>::AUTHOR)
-        .build()
-        .unwrap();
-    //println!("{:?}", A::TileSet::get_bmps());
-    let images = A::TileSet::get_bmps()
-        .iter()
-        .map(|image| image.load_into_ggez(&mut ctx).unwrap())
-        .collect::<Vec<_>>();
-    graphics::set_blend_mode(&mut ctx, BlendMode::Replace).unwrap();
-    let mut app = AppContainer { app, images };
-    println!("{}", graphics::renderer_info(&mut ctx).unwrap());
-    ggez::event::run(&mut ctx, &mut event_loop, &mut app).unwrap();
+impl Default for Frame {
+    /// Assumes a 80x25 frame size.
+    fn default() -> Self {
+        Frame::new(80, 25)
+    }
+}
+
+impl Index<(usize, usize)> for Frame {
+    type Output = Char;
+    fn index(&self, (x, y): (usize, usize)) -> &Self::Output {
+        &self[Point2 { x, y }]
+    }
+}
+
+impl IndexMut<(usize, usize)> for Frame {
+    fn index_mut(&mut self, (x, y): (usize, usize)) -> &mut Self::Output {
+        &mut self[Point2 { x, y }]
+    }
+}
+
+impl Index<Point2<usize>> for Frame {
+    type Output = Char;
+    fn index(&self, pos: Point2<usize>) -> &Self::Output {
+        self.get(pos)
+    }
+}
+
+impl IndexMut<Point2<usize>> for Frame {
+    fn index_mut(&mut self, pos: Point2<usize>) -> &mut Self::Output {
+        self.get_mut(pos)
+    }
 }

@@ -6,7 +6,7 @@ use proc_macro2::{Literal, TokenStream as TokStr2};
 use quote::quote;
 use syn::{
     parenthesized,
-    parse::{Parse, ParseStream, Parser},
+    parse::{Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
     spanned::Spanned,
@@ -120,9 +120,6 @@ pub fn derive_tileset(input: TokenStream) -> TokenStream {
 }
 
 fn real_derive_tileset(input: DeriveInput) -> Result<TokStr2> {
-    use crate::glyph::{Font, Glyph};
-
-    let font = Font::new();
     let enum_ident = &input.ident;
     let data = match &input.data {
         Data::Enum(ref data) => data,
@@ -131,44 +128,28 @@ fn real_derive_tileset(input: DeriveInput) -> Result<TokStr2> {
     let tile_info = get_all_tile_info(&data, &input)?;
     let default_variant = &tile_info.default;
     //println!("{:#?}", tile_info.tile_info);
-    let mut characters = Vec::new();
-    let (bmp_list, idx_list): (Vec<_>, Vec<_>) = tile_info
+    let into_list: Vec<_> = tile_info
         .tile_info
         .iter()
-        .enumerate()
         .map(
-            |(
-                idx,
-                TileInfo {
-                    ident,
-                    character,
-                    fg_color,
-                    bg_color,
-                },
-            )| {
-                let Glyph {
-                    width,
-                    height,
-                    data,
-                } = font.glyph(*character, *fg_color, *bg_color);
-                let width = width as u16;
-                let height = height as u16;
-                let ch = Literal::character(*character);
-                characters.push(quote! {
-                    #enum_ident :: #ident => #ch
-                });
-                let data = Literal::byte_string(&data);
-                (
-                    quote! {
-                        tiler::RgbaImage::new(#width, #height, #data)
-                    },
-                    quote! {
-                        #enum_ident :: #ident => #idx
-                    },
-                )
+            |TileInfo {
+                 ident,
+                 character,
+                 fg_color,
+                 bg_color,
+             }| {
+                let fg = fg_color.as_array();
+                let bg = bg_color.as_array();
+                quote! {
+                    #enum_ident :: #ident => tiler::Char {
+                        ch: #character,
+                        fg: #fg,
+                        bg: #bg,
+                    }
+                }
             },
         )
-        .unzip();
+        .collect();
     Ok(quote! {
         impl std::default::Default for #enum_ident {
             fn default() -> Self {
@@ -177,22 +158,9 @@ fn real_derive_tileset(input: DeriveInput) -> Result<TokStr2> {
         }
 
         impl tiler::TileSet for #enum_ident {
-            fn get_bmps() -> &'static [tiler::RgbaImage<'static>] {
-                const BMPS: &'static [tiler::RgbaImage<'static>] = &[
-                    #(#bmp_list),*
-                ];
-                BMPS
-            }
-
-            fn as_char(&self) -> char {
+            fn to_char(&self) -> tiler::Char {
                 match self {
-                    #(#characters),*
-                }
-            }
-
-            fn idx(&self) -> usize {
-                match self {
-                    #(#idx_list),*
+                    #(#into_list),*
                 }
             }
         }
@@ -212,10 +180,10 @@ fn get_all_tile_info(data: &DataEnum, input: &DeriveInput) -> Result<TileSetInfo
             match attr {
                 TileAttr::Char {
                     keyword,
-                    equals,
+                    equals: _,
                     lit_char,
                 } => match character {
-                    Some(ch) => {
+                    Some(_) => {
                         return Err(Error::new(
                             keyword.span(),
                             "there must only be a single `char` attribute",
@@ -233,16 +201,16 @@ fn get_all_tile_info(data: &DataEnum, input: &DeriveInput) -> Result<TileSetInfo
                     }
                 },
                 TileAttr::FgColor {
-                    keyword,
-                    equals,
+                    keyword: _,
+                    equals: _,
                     lit_str,
                 } => match Color::parse(&lit_str.value()) {
                     Ok(color) => fg_color = color,
                     Err(msg) => return Err(Error::new(lit_str.span(), msg)),
                 },
                 TileAttr::BgColor {
-                    keyword,
-                    equals,
+                    keyword: _,
+                    equals: _,
                     lit_str,
                 } => match Color::parse(&lit_str.value()) {
                     Ok(color) => bg_color = color,

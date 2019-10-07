@@ -1,7 +1,7 @@
 use mint::Point2;
 use rand::prelude::*;
 use std::{thread, time::Duration};
-use tiler::{App, Context, Grid, TileSet, KeyMods, KeyCode};
+use tiler::{App, Frame, TileSet};
 
 #[derive(Debug, Copy, Clone, TileSet)]
 pub enum Tiles {
@@ -28,16 +28,12 @@ pub enum Tiles {
 }
 
 struct State {
-    world: Grid<Tiles>,
     player: Point2<usize>,
 }
 
 impl State {
     pub fn new() -> Self {
         State {
-            world: Grid::from_fn(<Self as App>::WIDTH, <Self as App>::HEIGHT, |x, y| {
-                *(&[Tiles::Grass, Tiles::LightGrass][..]).choose(&mut rand::thread_rng()).unwrap()
-            }),
             player: Point2 { x: 5, y: 5 },
         }
     }
@@ -45,22 +41,17 @@ impl State {
 
 impl App for State {
     const NAME: &'static str = "rogue";
-    const AUTHOR: &'static str = "dodj";
-    const WIDTH: usize = 80;
-    const HEIGHT: usize = 30;
-    type TileSet = Tiles;
+    const SIZE: Point2<usize> = Point2 { x: 80, y: 30 };
 
-    fn draw(&self, frame: &mut Grid<Self::TileSet>, ctx: Context) {
-        frame.clone_from(&self.world);
+    fn update(&mut self, frame: &mut Frame) {
         let room = Room::new(0, 0, 5, 7);
         room.draw(frame);
         let room = Room::new(20, 15, 28, 18);
-        //room.draw(frame);
-        frame[(self.player.x, self.player.y)] = Tiles::Character;
+        //room.draw(&mut frame.grid);
+        frame[(self.player.x, self.player.y)] = Tiles::Character.to_char();
     }
 
-    fn update(&mut self, ctx: Context) {}
-
+    /*
     fn key_down_event(&mut self, ctx: Context, keycode: KeyCode, keymods: KeyMods, repeat: bool) {
         match keycode {
             KeyCode::Left => {
@@ -86,6 +77,7 @@ impl App for State {
             _ => (), // ignore
         }
     }
+    */
 }
 
 /// The indexes of the parameters are the walls.
@@ -96,7 +88,7 @@ impl Room {
         Room(Rect::from_parts(left, top, right, bottom))
     }
 
-    fn draw(&self, frame: &mut Grid<Tiles>) {
+    fn draw(&self, frame: &mut Frame) {
         <Self as NinePatch>::draw(frame, self.0)
     }
 }
@@ -115,7 +107,7 @@ impl NinePatch for Room {
 }
 
 pub trait NinePatch {
-    type TileSet;
+    type TileSet: TileSet;
     const TOP_LEFT: Self::TileSet;
     const TOP: Self::TileSet;
     const TOP_RIGHT: Self::TileSet;
@@ -126,27 +118,27 @@ pub trait NinePatch {
     const BOTTOM: Self::TileSet;
     const BOTTOM_RIGHT: Self::TileSet;
 
-    fn draw(frame: &mut Grid<Self::TileSet>, rect: Rect) {
+    fn draw(frame: &mut Frame, rect: Rect) {
         let Rect {
             top_left,
             bottom_right,
         } = rect;
 
         for x in top_left.x + 1..bottom_right.x - 1 {
-            frame[(x, top_left.y)] = Self::TOP;
-            frame[(x, bottom_right.y - 1)] = Self::BOTTOM;
+            frame[(x, top_left.y)] = Self::TOP.to_char();
+            frame[(x, bottom_right.y - 1)] = Self::BOTTOM.to_char();
         }
         for y in top_left.y + 1..bottom_right.y - 1 {
-            frame[(top_left.x, y)] = Self::LEFT;
-            frame[(bottom_right.x - 1, y)] = Self::RIGHT;
+            frame[(top_left.x, y)] = Self::LEFT.to_char();
+            frame[(bottom_right.x - 1, y)] = Self::RIGHT.to_char();
         }
-        frame[(top_left.x, top_left.y)] = Self::TOP_LEFT;
-        frame[(bottom_right.x - 1, top_left.y)] = Self::TOP_RIGHT;
-        frame[(top_left.x, bottom_right.y - 1)] = Self::BOTTOM_LEFT;
-        frame[(bottom_right.x - 1, bottom_right.y - 1)] = Self::BOTTOM_RIGHT;
+        frame[(top_left.x, top_left.y)] = Self::TOP_LEFT.to_char();
+        frame[(bottom_right.x - 1, top_left.y)] = Self::TOP_RIGHT.to_char();
+        frame[(top_left.x, bottom_right.y - 1)] = Self::BOTTOM_LEFT.to_char();
+        frame[(bottom_right.x - 1, bottom_right.y - 1)] = Self::BOTTOM_RIGHT.to_char();
         for x in (top_left.x + 1)..(bottom_right.x - 1) {
             for y in (top_left.y + 1)..(bottom_right.y - 1) {
-                frame[(x, y)] = Self::MIDDLE;
+                frame[(x, y)] = Self::MIDDLE.to_char();
             }
         }
     }

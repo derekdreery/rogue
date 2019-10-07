@@ -5,6 +5,11 @@ authors = ["Richard Dodd <richard.o.dodd@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-tiler_derive = { version = "0.1", path = "../tiler_derive" }
-ggez = "0.5.1"
-mint = "0.5.2"
+tiler_derive = { path = "../tiler_derive" }
+winit = "0.20.0-alpha3"
+raw-window-handle = "0.1.0"
+wgpu = { version = "0.3.0", features = ["vulkan"] }
+wgpu_glyph = "0.4.0"
+mint = "0.5.3"
+log = "0.4.8"
+env_logger = "0.7.0"
